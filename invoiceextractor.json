@@ -1,0 +1,267 @@
+{
+  "name": "Invoice Extractor Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "logistic-invoice"
+      },
+      "name": "On form submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{$json[\"mimeType\"]}}",
+        "rules": [
+          {
+            "operation": "equal",
+            "value2": "application/pdf"
+          },
+          {
+            "operation": "equal",
+            "value2": "image/jpeg"
+          },
+          {
+            "operation": "equal",
+            "value2": "image/png"
+          }
+        ]
+      },
+      "name": "Switch File Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "language": "eng",
+        "imagePropertyName": "data"
+      },
+      "name": "Tesseract OCR",
+      "type": "n8n-nodes-base.tesseractOcr",
+      "typeVersion": 1,
+      "position": [600, 500]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "field": [
+            {
+              "name": "invoice_text",
+              "value": "={{$json[\"text\"]}}"
+            }
+          ]
+        }
+      },
+      "name": "Set Invoice Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [800, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "return items.map(item => {\n  item.json.cleaned = item.json.invoice_text.replace(/\\s+/g, ' ').trim();\n  return item;\n});"
+      },
+      "name": "Clean Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4",
+        "prompt": "You are a helpful assistant. Extract the following from this invoice text:\n- Invoice Number\n- Date\n- Amount\n- Vendor\n\nText: {{$json.cleaned}}"
+      },
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openai",
+      "typeVersion": 1,
+      "position": [1200, 500]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "field": [
+            {
+              "name": "Invoice Number",
+              "value": "={{$json[\"Invoice Number\"]}}"
+            },
+            {
+              "name": "Date",
+              "value": "={{$json[\"Date\"]}}"
+            },
+            {
+              "name": "Amount",
+              "value": "={{$json[\"Amount\"]}}"
+            },
+            {
+              "name": "Vendor",
+              "value": "={{$json[\"Vendor\"]}}"
+            }
+          ]
+        }
+      },
+      "name": "Set Sheet Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [1400, 500]
+    },
+    {
+      "parameters": {
+        "resource": "sheet",
+        "operation": "append",
+        "sheetId": "YOUR_GOOGLE_SHEET_ID",
+        "range": "Invoices!A1",
+        "options": {
+          "valueInputMode": "RAW"
+        }
+      },
+      "name": "Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1600, 500],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "your-credentials-id",
+          "name": "your-credentials-name"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "requestMethod": "POST",
+        "url": "https://api.mistral.ai/v1/upload",
+        "sendBinaryData": true,
+        "binaryPropertyName": "data",
+        "headerParametersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_MISTRAL_API_KEY"
+            }
+          ]
+        }
+      },
+      "name": "send pdf to Mistral",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [600, 100]
+    },
+    {
+      "parameters": {
+        "fields": {
+          "field": [
+            {
+              "name": "invoice_text",
+              "value": "Parsed text from Mistral PDF"
+            }
+          ]
+        }
+      },
+      "name": "Set Mistral Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [800, 100]
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Switch File Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch File Type": {
+      "main": [
+        [
+          {
+            "node": "send pdf to Mistral",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tesseract OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "send pdf to Mistral": {
+      "main": [
+        [
+          {
+            "node": "Set Mistral Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tesseract OCR": {
+      "main": [
+        [
+          {
+            "node": "Set Invoice Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Invoice Text": {
+      "main": [
+        [
+          {
+            "node": "Clean Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Text": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Set Sheet Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Sheet Data": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
